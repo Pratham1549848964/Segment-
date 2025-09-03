@@ -10,22 +10,43 @@ june_file = st.file_uploader("Upload June Excel File", type=["xlsx"])
 july_file = st.file_uploader("Upload July Excel File", type=["xlsx"])
 august_file = st.file_uploader("Upload August Excel File", type=["xlsx"])
 
+# ================== Cache: Load Excel ==================
+@st.cache_data
+def load_excel(file):
+    df = pd.read_excel(file, sheet_name="Agent Wise", header=1)
+    df.columns = df.columns.str.strip()
+    return df
+
+# ================== Cache: Get Dropdown Options ==================
+@st.cache_data
+def get_dropdown_options(df):
+    return {
+        "processes": df["Process_Final"].dropna().unique().tolist(),
+        "reporting_1": df["1st Reporting"].dropna().unique().tolist(),
+        "reporting_2": df["2nd Reporting"].dropna().unique().tolist(),
+        "managers": df["Manager"].dropna().unique().tolist(),
+        "ageing": df["Ageing"].dropna().unique().tolist()
+    }
+
+# ================== Cache: Filter & Merge ==================
+@st.cache_data
+def cached_filter_and_merge(ecodes, extra_cols=[]):
+    return filter_and_merge(ecodes, extra_cols)
+
 if june_file and july_file and august_file:
     months = ["June", "July", "August"]
     file_paths = [june_file, july_file, august_file]
 
-    dfs = {}
-    for month, file in zip(months, file_paths):
-        df = pd.read_excel(file, sheet_name="Agent Wise", header=1)
-        df.columns = df.columns.str.strip()
-        dfs[month] = df
+    # ================== Load Excel Files (Cached) ==================
+    dfs = {month: load_excel(file) for month, file in zip(months, file_paths)}
 
-    # ================== Unique Dropdown Options ==================
-    all_processes = dfs["August"]["Process_Final"].dropna().unique().tolist()
-    all_reporting_1 = dfs["August"]["1st Reporting"].dropna().unique().tolist()
-    all_reporting_2 = dfs["August"]["2nd Reporting"].dropna().unique().tolist()
-    all_managers = dfs["August"]["Manager"].dropna().unique().tolist()
-    all_ageing = dfs["August"]["Ageing"].dropna().unique().tolist()
+    # ================== Dropdown Options (Cached) ==================
+    options = get_dropdown_options(dfs["August"])
+    all_processes = options["processes"]
+    all_reporting_1 = options["reporting_1"]
+    all_reporting_2 = options["reporting_2"]
+    all_managers = options["managers"]
+    all_ageing = options["ageing"]
 
     # ================== Helper Functions ==================
     def format_columns(df):
@@ -37,45 +58,51 @@ if june_file and july_file and august_file:
             df["Con.%"] = (df["Con.%"] * 100).round(1)
         return df
 
-    # ================== Caching ==================
-    @st.cache_data
-    def create_ecode_lookup(dfs):
-        lookup = {}
-        for month, df in dfs.items():
-            lookup[month] = df.set_index("Ecode")
-        return lookup
+    def filter_and_merge(ecodes, extra_cols=[]):
+        august_data = dfs["August"][dfs["August"]["Ecode"].astype(str).isin(ecodes)]
+        ageing_map = august_data.set_index("Ecode")["Ageing"].to_dict()
 
-    ecode_lookup = create_ecode_lookup(dfs)
-
-    # ================== Optimized Filter & Merge ==================
-    def fast_filter_and_merge(ecodes, extra_cols=[]):
         merged = None
-        ageing_map = dfs["August"].set_index("Ecode")["Ageing"].to_dict()
-
         for month in months:
-            df = ecode_lookup[month]
-            subset = df.loc[df.index.intersection(ecodes)].copy()
+            df = dfs[month]
+            subset = df[df["Ecode"].astype(str).isin(ecodes)].copy()
             if not subset.empty:
-                base_cols = ["Employee Name", "Status", "Process_Final", "Leads", "Bkgs", "APE", "ATS", "Con.%", "APE/Leads"]
+                base_cols = ["Ecode", "Employee Name", "Status",
+                             "Process_Final", "Leads", "Bkgs", "APE", "ATS", "Con.%", "APE/Leads"]
                 subset = subset[base_cols]
                 for col in extra_cols:
                     if col in df.columns:
                         subset[col] = df.loc[subset.index, col]
-                subset["Ageing"] = subset.index.map(ageing_map)
+                subset["Ageing"] = subset["Ecode"].map(ageing_map)
                 subset = format_columns(subset)
 
-                rename_map = {col: f"{month}_{col}" for col in subset.columns if col not in ["Ageing", "Employee Name", "Status"]}
+                # ✅ Rename with month prefix
+                rename_map = {
+                    col: f"{month}_{col}" for col in subset.columns
+                    if col not in ["Ecode", "Employee Name", "Status", "Ageing"]
+                }
                 subset = subset.rename(columns=rename_map)
-                subset = subset.reset_index().rename(columns={"Ecode": "Ecode"})
 
                 if merged is None:
                     merged = subset
                 else:
-                    merged = pd.merge(merged, subset, on=["Ecode", "Employee Name", "Status", "Ageing"], how="outer")
+                    merged = pd.merge(
+                        merged, subset,
+                        on=["Ecode", "Employee Name", "Status", "Ageing"],
+                        how="outer"
+                    )
 
         if merged is not None:
-            merged = merged.sort_values(by="Ecode").reset_index(drop=True)
-        return merged
+            merged = merged.sort_values(by="Ecode", ascending=True)
+            cols = merged.columns.tolist()
+            if "Ageing" in cols:
+                cols.remove("Ageing")
+                status_index = cols.index("Status")
+                cols = cols[:status_index+1] + ["Ageing"] + cols[status_index+1:]
+                merged = merged[cols]
+            return merged
+        else:
+            return None
 
     # ================== Mode Selection ==================
     mode = st.selectbox("Select Mode:", [
@@ -88,7 +115,7 @@ if june_file and july_file and august_file:
         ecode = st.text_input("Enter Ecode:")
         if st.button("Show Results") and ecode:
             ecodes = [ecode]
-            results = fast_filter_and_merge(ecodes)
+            results = cached_filter_and_merge(ecodes)
             if results is not None and not results.empty:
                 st.dataframe(results)
             else:
@@ -100,7 +127,7 @@ if june_file and july_file and august_file:
         if st.button("Show Results") and selected:
             august_data = dfs["August"][dfs["August"]["Process_Final"].isin(selected)]
             ecodes = august_data["Ecode"].astype(str).unique().tolist()
-            results = fast_filter_and_merge(ecodes)
+            results = cached_filter_and_merge(ecodes)
             if results is not None and not results.empty:
                 st.dataframe(results)
             else:
@@ -112,7 +139,7 @@ if june_file and july_file and august_file:
         if st.button("Show Results") and selected:
             august_data = dfs["August"][dfs["August"]["1st Reporting"].isin(selected)]
             ecodes = august_data["Ecode"].astype(str).unique().tolist()
-            results = fast_filter_and_merge(ecodes, extra_cols=["1st Reporting"])
+            results = cached_filter_and_merge(ecodes, extra_cols=["1st Reporting"])
             if results is not None and not results.empty:
                 st.dataframe(results)
             else:
@@ -124,7 +151,7 @@ if june_file and july_file and august_file:
         if st.button("Show Results") and selected:
             august_data = dfs["August"][dfs["August"]["2nd Reporting"].isin(selected)]
             ecodes = august_data["Ecode"].astype(str).unique().tolist()
-            results = fast_filter_and_merge(ecodes, extra_cols=["2nd Reporting"])
+            results = cached_filter_and_merge(ecodes, extra_cols=["2nd Reporting"])
             if results is not None and not results.empty:
                 st.dataframe(results)
             else:
@@ -136,7 +163,7 @@ if june_file and july_file and august_file:
         if st.button("Show Results") and selected:
             august_data = dfs["August"][dfs["August"]["Manager"].isin(selected)]
             ecodes = august_data["Ecode"].astype(str).unique().tolist()
-            results = fast_filter_and_merge(ecodes, extra_cols=["Manager"])
+            results = cached_filter_and_merge(ecodes, extra_cols=["Manager"])
             if results is not None and not results.empty:
                 st.dataframe(results)
             else:
@@ -148,11 +175,12 @@ if june_file and july_file and august_file:
         if st.button("Show Results") and selected:
             august_data = dfs["August"][dfs["August"]["Ageing"].isin(selected)]
             ecodes = august_data["Ecode"].astype(str).unique().tolist()
-            results = fast_filter_and_merge(ecodes)
+            results = cached_filter_and_merge(ecodes)
             if results is not None and not results.empty:
                 st.dataframe(results)
             else:
                 st.warning("No data found for these ageing buckets.")
+
 
 
 
