@@ -73,9 +73,16 @@ if june_file and july_file and august_file:
 
         if merged is not None:
             merged = merged.sort_values(by="Ecode", ascending=True)
+            cols = merged.columns.tolist()
+            if "Ageing" in cols:
+                cols.remove("Ageing")
+                status_index = cols.index("Status")
+                cols = cols[:status_index+1] + ["Ageing"] + cols[status_index+1:]
+                merged = merged[cols]
             return merged
         else:
             return None
+            
 
     # ================== Mode Selection ==================
     mode = st.selectbox("Select Mode:", [
