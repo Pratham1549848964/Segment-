@@ -28,19 +28,14 @@ def get_dropdown_options(df):
         "ageing": df["Ageing"].dropna().unique().tolist()
     }
 
-# ================== Cache: Filter & Merge ==================
-@st.cache_data
-def cached_filter_and_merge(ecodes, extra_cols=[]):
-    return filter_and_merge(ecodes, extra_cols)
-
 if june_file and july_file and august_file:
     months = ["June", "July", "August"]
     file_paths = [june_file, july_file, august_file]
 
-    # ================== Load Excel Files (Cached) ==================
+    # ================== Load Excel Files ==================
     dfs = {month: load_excel(file) for month, file in zip(months, file_paths)}
 
-    # ================== Dropdown Options (Cached) ==================
+    # ================== Dropdown Options ==================
     options = get_dropdown_options(dfs["August"])
     all_processes = options["processes"]
     all_reporting_1 = options["reporting_1"]
@@ -76,11 +71,8 @@ if june_file and july_file and august_file:
                 subset["Ageing"] = subset["Ecode"].map(ageing_map)
                 subset = format_columns(subset)
 
-                # ✅ Rename with month prefix
-                rename_map = {
-                    col: f"{month}_{col}" for col in subset.columns
-                    if col not in ["Ecode", "Employee Name", "Status", "Ageing"]
-                }
+                rename_map = {col: f"{month}_{col}" for col in subset.columns
+                              if col not in ["Ecode", "Employee Name", "Status", "Ageing"]}
                 subset = subset.rename(columns=rename_map)
 
                 if merged is None:
@@ -103,6 +95,11 @@ if june_file and july_file and august_file:
             return merged
         else:
             return None
+
+    # ================== Cache Wrapper ==================
+    @st.cache_data
+    def cached_filter_and_merge(ecodes, extra_cols=[]):
+        return filter_and_merge(ecodes, extra_cols)
 
     # ================== Mode Selection ==================
     mode = st.selectbox("Select Mode:", [
@@ -180,6 +177,7 @@ if june_file and july_file and august_file:
                 st.dataframe(results)
             else:
                 st.warning("No data found for these ageing buckets.")
+
 
 
 
