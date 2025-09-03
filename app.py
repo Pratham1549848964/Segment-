@@ -1,37 +1,27 @@
-import pandas as pd
 import streamlit as st
+import pandas as pd
 
-# ========== App Title ==========
-st.set_page_config(page_title="Performance Dashboard", layout="wide")
-st.title("📊 Performance Dashboard")
-st.write("Upload June, July, and August Excel files to analyze performance.")
+# ================== File Upload ==================
+st.title("Agent Performance Dashboard")
 
-# ========== File Upload ==========
-june_file = st.file_uploader("Upload June.xlsx", type="xlsx")
-july_file = st.file_uploader("Upload July.xlsx", type="xlsx")
-august_file = st.file_uploader("Upload August.xlsx", type="xlsx")
+uploaded_files = st.file_uploader("Upload Excel Files (June, July, August)", type=["xlsx"], accept_multiple_files=True)
 
-if june_file and july_file and august_file:
+if uploaded_files:
     months = ["June", "July", "August"]
-    files = [june_file, july_file, august_file]
-
     dfs = {}
-    for month, f in zip(months, files):
-        df = pd.read_excel(f, sheet_name="Agent Wise", header=1)
+
+    for month, file in zip(months, uploaded_files):
+        df = pd.read_excel(file, sheet_name="Agent Wise", header=1)
         df.columns = df.columns.str.strip()
         dfs[month] = df
 
-    # Unique dropdown values
     all_processes = dfs["August"]["Process_Final"].dropna().unique().tolist()
-    all_reporting = dfs["August"]["1st Reporting"].dropna().unique().tolist()
-    all_reporting2 = dfs["August"]["2nd Reporting"].dropna().unique().tolist()
-    all_manager = dfs["August"]["Manager"].dropna().unique().tolist()
-    all_ageing = [
-        val for val in dfs["August"]["Ageing"].dropna().unique().tolist()
-        if isinstance(val, str) and ("M" in val or "Above" in val)
-    ]
+    all_reporting_1 = dfs["August"]["1st Reporting"].dropna().unique().tolist()
+    all_reporting_2 = dfs["August"]["2nd Reporting"].dropna().unique().tolist()
+    all_managers = dfs["August"]["Manager"].dropna().unique().tolist()
+    all_ageing = dfs["August"]["Ageing"].dropna().unique().tolist()
 
-    # ========== Helper ==========
+    # ================== Helper Functions ==================
     def format_columns(df):
         df = df.copy()
         for col in ["APE", "ATS", "APE/Leads"]:
@@ -58,95 +48,121 @@ if june_file and july_file and august_file:
                         subset[col] = df.loc[subset.index, col]
                 subset["Ageing"] = subset["Ecode"].map(ageing_map)
                 subset = format_columns(subset)
+
+                # ✅ Always sort by Ecode ascending
+                subset = subset.sort_values(by="Ecode", ascending=True)
+
                 results[month] = subset[["Ecode", "Employee Name", "Status", "Ageing"] + extra_cols +
                                         ["Process_Final", "Leads", "Bkgs", "APE", "ATS", "Con.%", "APE/Leads"]]
         return results
 
-    # ========== Mode Selection ==========
-    mode = st.selectbox("Select Mode", [
+    # ================== Mode Selection ==================
+    mode = st.selectbox("Select Mode:", [
         "Agent-wise", "Process-wise", "1st Reporting-wise",
         "2nd Reporting-wise", "Manager-wise", "Ageing-wise"
     ])
 
-    # Agent-wise
+    # ======== Agent-wise ========
     if mode == "Agent-wise":
-        ecode = st.text_input("Enter Ecode")
-        if st.button("Show Results") and ecode:
-            ecodes = [ecode]
-            results = filter_and_show(ecodes)
+        ecode = st.text_input("Enter Ecode:")
+        if st.button("Show Results"):
+            results = {}
+            for sheet, df in dfs.items():
+                agent_data = df[df["Ecode"].astype(str) == ecode]
+                if not agent_data.empty:
+                    agent_data = agent_data[["Ecode", "Employee Name", "Status", "Ageing",
+                                             "Process_Final", "Leads", "Bkgs", "APE", "ATS", "Con.%", "APE/Leads"]]
+                    agent_data = format_columns(agent_data)
+                    agent_data = agent_data.sort_values(by="Ecode", ascending=True)
+                    results[sheet] = agent_data
             if results:
-                for m in results:
-                    st.subheader(m)
-                    st.dataframe(results[m])
+                for m, r in results.items():
+                    st.subheader(f"{m}")
+                    st.dataframe(r)
             else:
                 st.warning("No data found for this Ecode.")
 
-    # Process-wise
+    # ======== Process-wise ========
     elif mode == "Process-wise":
-        selected = st.multiselect("Select Processes", all_processes)
-        if st.button("Show Results") and selected:
-            august_data = dfs["August"][dfs["August"]["Process_Final"].isin(selected)]
-            ecodes = august_data["Ecode"].astype(str).unique().tolist()
-            results = filter_and_show(ecodes)
-            if results:
-                for m in results:
-                    st.subheader(m)
-                    st.dataframe(results[m])
+        selected = st.multiselect("Select Process(es):", all_processes)
+        if st.button("Show Results"):
+            if not selected:
+                st.warning("Please select at least one process.")
             else:
-                st.warning("No data found for selected processes.")
+                august_data = dfs["August"][dfs["August"]["Process_Final"].isin(selected)]
+                ecodes = august_data["Ecode"].astype(str).unique().tolist()
+                results = filter_and_show(ecodes)
+                if results:
+                    for m, r in results.items():
+                        st.subheader(f"{m}")
+                        st.dataframe(r)
+                else:
+                    st.warning("No data found for these processes.")
 
-    # 1st Reporting-wise
+    # ======== 1st Reporting-wise ========
     elif mode == "1st Reporting-wise":
-        selected = st.multiselect("Select 1st Reporting", all_reporting)
-        if st.button("Show Results") and selected:
-            august_data = dfs["August"][dfs["August"]["1st Reporting"].isin(selected)]
-            ecodes = august_data["Ecode"].astype(str).unique().tolist()
-            results = filter_and_show(ecodes, extra_cols=["1st Reporting"])
-            if results:
-                for m in results:
-                    st.subheader(m)
-                    st.dataframe(results[m])
+        selected = st.multiselect("Select 1st Reporting Head(s):", all_reporting_1)
+        if st.button("Show Results"):
+            if not selected:
+                st.warning("Please select at least one reporting head.")
             else:
-                st.warning("No data found for selected reporting.")
+                august_data = dfs["August"][dfs["August"]["1st Reporting"].isin(selected)]
+                ecodes = august_data["Ecode"].astype(str).unique().tolist()
+                results = filter_and_show(ecodes, extra_cols=["1st Reporting"])
+                if results:
+                    for m, r in results.items():
+                        st.subheader(f"{m}")
+                        st.dataframe(r)
+                else:
+                    st.warning("No data found for these reporting heads.")
 
-    # 2nd Reporting-wise
+    # ======== 2nd Reporting-wise ========
     elif mode == "2nd Reporting-wise":
-        selected = st.multiselect("Select 2nd Reporting", all_reporting2)
-        if st.button("Show Results") and selected:
-            august_data = dfs["August"][dfs["August"]["2nd Reporting"].isin(selected)]
-            ecodes = august_data["Ecode"].astype(str).unique().tolist()
-            results = filter_and_show(ecodes, extra_cols=["2nd Reporting"])
-            if results:
-                for m in results:
-                    st.subheader(m)
-                    st.dataframe(results[m])
+        selected = st.multiselect("Select 2nd Reporting Head(s):", all_reporting_2)
+        if st.button("Show Results"):
+            if not selected:
+                st.warning("Please select at least one reporting head.")
             else:
-                st.warning("No data found for selected reporting.")
+                august_data = dfs["August"][dfs["August"]["2nd Reporting"].isin(selected)]
+                ecodes = august_data["Ecode"].astype(str).unique().tolist()
+                results = filter_and_show(ecodes, extra_cols=["2nd Reporting"])
+                if results:
+                    for m, r in results.items():
+                        st.subheader(f"{m}")
+                        st.dataframe(r)
+                else:
+                    st.warning("No data found for these reporting heads.")
 
-    # Manager-wise
+    # ======== Manager-wise ========
     elif mode == "Manager-wise":
-        selected = st.multiselect("Select Manager", all_manager)
-        if st.button("Show Results") and selected:
-            august_data = dfs["August"][dfs["August"]["Manager"].isin(selected)]
-            ecodes = august_data["Ecode"].astype(str).unique().tolist()
-            results = filter_and_show(ecodes, extra_cols=["Manager"])
-            if results:
-                for m in results:
-                    st.subheader(m)
-                    st.dataframe(results[m])
+        selected = st.multiselect("Select Manager(s):", all_managers)
+        if st.button("Show Results"):
+            if not selected:
+                st.warning("Please select at least one manager.")
             else:
-                st.warning("No data found for selected managers.")
+                august_data = dfs["August"][dfs["August"]["Manager"].isin(selected)]
+                ecodes = august_data["Ecode"].astype(str).unique().tolist()
+                results = filter_and_show(ecodes, extra_cols=["Manager"])
+                if results:
+                    for m, r in results.items():
+                        st.subheader(f"{m}")
+                        st.dataframe(r)
+                else:
+                    st.warning("No data found for these managers.")
 
-    # Ageing-wise
+    # ======== Ageing-wise ========
     elif mode == "Ageing-wise":
-        selected = st.multiselect("Select Ageing Buckets", all_ageing)
-        if st.button("Show Results") and selected:
-            august_data = dfs["August"][dfs["August"]["Ageing"].isin(selected)]
-            ecodes = august_data["Ecode"].astype(str).unique().tolist()
-            results = filter_and_show(ecodes)
-            if results:
-                for m in results:
-                    st.subheader(m)
-                    st.dataframe(results[m])
+        selected = st.multiselect("Select Ageing Bucket(s):", all_ageing)
+        if st.button("Show Results"):
+            if not selected:
+                st.warning("Please select at least one ageing bucket.")
             else:
-                st.warning("No data found for selected ageing buckets.")
+                august_data = dfs["August"][dfs["August"]["Ageing"].isin(selected)]
+                ecodes = august_data["Ecode"].astype(str).unique().tolist()
+                results = filter_and_show(ecodes)
+                if results:
+                    for m, r in results.items():
+                        st.subheader(f"{m}")
+                        st.dataframe(r)
+                else:
+                    st.warning("No data found for these ageing buckets.")
