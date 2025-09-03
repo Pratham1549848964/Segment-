@@ -4,13 +4,16 @@ import pandas as pd
 # ================== File Upload ==================
 st.title("Agent Performance Dashboard")
 
-uploaded_files = st.file_uploader("Upload Excel Files (June, July, August)", type=["xlsx"], accept_multiple_files=True)
+june_file = st.file_uploader("Upload June Excel File", type=["xlsx"])
+july_file = st.file_uploader("Upload July Excel File", type=["xlsx"])
+august_file = st.file_uploader("Upload August Excel File", type=["xlsx"])
 
-if uploaded_files:
+if june_file and july_file and august_file:
     months = ["June", "July", "August"]
-    dfs = {}
+    file_paths = [june_file, july_file, august_file]
 
-    for month, file in zip(months, uploaded_files):
+    dfs = {}
+    for month, file in zip(months, file_paths):
         df = pd.read_excel(file, sheet_name="Agent Wise", header=1)
         df.columns = df.columns.str.strip()
         dfs[month] = df
@@ -166,3 +169,4 @@ if uploaded_files:
                         st.dataframe(r)
                 else:
                     st.warning("No data found for these ageing buckets.")
+
