@@ -206,7 +206,12 @@ if june_file and july_file and august_file:
                     results = filter_and_merge(ecodes, extra_cols)
                     if results is not None and not results.empty:
                         st.subheader("📋 Results")
-                        st.dataframe(results.style.highlight_max(axis=0, color="lightgreen"))
+
+                        # ✅ Fix: highlight only numeric columns
+                        numeric_cols = results.select_dtypes(include="number").columns
+                        styled = results.style.highlight_max(subset=numeric_cols, color="lightgreen")
+
+                        st.dataframe(styled, use_container_width=True)
                     else:
                         st.warning("⚠️ No data found for the selected input.")
                 else:
@@ -218,3 +223,4 @@ if june_file and july_file and august_file:
     except Exception as e:
         st.error(f"Error loading files or initializing dashboard: {e}")
         st.text(traceback.format_exc())
+
