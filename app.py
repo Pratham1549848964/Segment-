@@ -4,12 +4,67 @@ import traceback
 
 # ================== Streamlit Setup ==================
 st.set_page_config(page_title="Agent Performance Dashboard", layout="wide")
-st.title("📊 Agent Performance Dashboard")
+
+# ================== Custom CSS ==================
+st.markdown(
+    """
+    <style>
+    /* Main background */
+    .main {
+        background-color: #f8f9fa;
+    }
+    /* Navbar */
+    .navbar {
+        background-color: #1f2937;
+        padding: 15px 30px;
+        border-radius: 10px;
+        margin-bottom: 25px;
+    }
+    .navbar h1 {
+        color: white !important;
+        font-size: 28px !important;
+        text-align: center;
+    }
+    /* File uploader + filters as cards */
+    .stFileUploader, .stSelectbox, .stMultiSelect, .stTextInput {
+        background: white;
+        padding: 12px;
+        border-radius: 12px;
+        box-shadow: 0 1px 6px rgba(0,0,0,0.1);
+        margin-bottom: 12px;
+    }
+    /* Buttons */
+    .stButton>button {
+        background: #2563eb;
+        color: white;
+        font-weight: 600;
+        border-radius: 8px;
+        padding: 10px 20px;
+        transition: 0.3s;
+    }
+    .stButton>button:hover {
+        background: #1e40af;
+        transform: translateY(-2px);
+    }
+    /* Dataframe card */
+    .stDataFrame {
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# ================== Navbar ==================
+st.markdown('<div class="navbar"><h1>📊 Agent Performance Dashboard</h1></div>', unsafe_allow_html=True)
 
 # ================== File Upload ==================
-june_file = st.file_uploader("Upload June Excel File", type=["xlsx"])
-july_file = st.file_uploader("Upload July Excel File", type=["xlsx"])
-august_file = st.file_uploader("Upload August Excel File", type=["xlsx"])
+st.sidebar.header("📂 Upload Files")
+june_file = st.sidebar.file_uploader("Upload June Excel File", type=["xlsx"])
+july_file = st.sidebar.file_uploader("Upload July Excel File", type=["xlsx"])
+august_file = st.sidebar.file_uploader("Upload August Excel File", type=["xlsx"])
 
 # ================== Cached Functions ==================
 @st.cache_data
@@ -101,7 +156,8 @@ if june_file and july_file and august_file:
                 return None
 
         # ================== Mode Selection ==================
-        mode = st.selectbox("Select Mode:", [
+        st.sidebar.header("⚙️ Filters")
+        mode = st.sidebar.selectbox("Select Mode:", [
             "Agent-wise", "Process-wise", "1st Reporting-wise",
             "2nd Reporting-wise", "Manager-wise", "Ageing-wise"
         ])
@@ -149,11 +205,12 @@ if june_file and july_file and august_file:
                 if ecodes:
                     results = filter_and_merge(ecodes, extra_cols)
                     if results is not None and not results.empty:
-                        st.dataframe(results)
+                        st.subheader("📋 Results")
+                        st.dataframe(results.style.highlight_max(axis=0, color="lightgreen"))
                     else:
-                        st.warning("No data found for the selected input.")
+                        st.warning("⚠️ No data found for the selected input.")
                 else:
-                    st.warning("Please provide input or select at least one option.")
+                    st.warning("⚠️ Please provide input or select at least one option.")
             except Exception as e:
                 st.error(f"Error while processing data: {e}")
                 st.text(traceback.format_exc())
